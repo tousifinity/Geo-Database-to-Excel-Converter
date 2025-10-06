@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GDB to Excel Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f4f7f9;
+            color: #333;
+        }
+
+        .container {
+            background: #fff;
+            padding: 30px 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        h2 {
+            color: #1a73e8;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #progressBarContainer {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        #progressBar {
+            height: 25px;
+            background: linear-gradient(90deg, #4CAF50, #8bc34a);
+            width: 0%;
+            transition: width 0.4s ease-out;
+            /* Smooth animation for progress */
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            box-sizing: border-box;
+        }
+
+        #progressText {
+            font-weight: bold;
+            color: #333;
+            display: block;
+            margin-top: 10px;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        /* ---------------------------------- */
+        /* CSS for Rotating Icon */
+        /* ---------------------------------- */
+
+        /* Define the spin animation */
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Class to apply the animation */
+        .spinning-icon {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>📂 GDB to Excel Converter</h2>
+
+        <input type="file" id="fileInput" accept=".zip" />
+        <button onclick="upload()">Convert</button>
+
+        <p id="progressText">0%</p>
+        <div id="progressBarContainer">
+            <div id="progressBar" style="width:0%;"></div>
+        </div>
+
+        <p id="status"></p>
+    </div>
+
+    <script>
+        async function upload() {
+            const file = document.getElementById("fileInput").files[0];
+            if (!file) return alert("Please select a file.");
+
+            // 1. Set the initial status with the spinning icon
+            const statusElement = document.getElementById("status");
+            statusElement.innerHTML = '<span id="spinnerIcon" class="spinning-icon">⏳</span> Converting...';
+
+            document.getElementById("progressBar").style.width = "0%";
+            document.getElementById("progressText").innerText = "0%";
+            document.getElementById("progressBar").style.background = 'linear-gradient(90deg, #4CAF50, #8bc34a)'; // Reset color
+
+            const uploadID = crypto.randomUUID();
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("upload_id", uploadID);
+
+            let interval = null;
+
+            // Initiate conversion (non-await)
+            const responsePromise = fetch("http://127.0.0.1:8000/convert", {
+                method: "POST",
+                body: formData
+            });
+
+            // Start polling for progress concurrently
+            interval = setInterval(async () => {
+                const res = await fetch(`http://127.0.0.1:8000/progress/${uploadID}`);
+                const data = await res.json();
+                const progressValue = data.progress;
+
+                // Update UI
+                document.getElementById("progressBar").style.width = progressValue + "%";
+                document.getElementById("progressText").innerText = progressValue + "%";
+
+                // Stop polling once the server reaches its maximum capped limit (assuming 90% or 99%)
+                if (progressValue >= 90) clearInterval(interval);
+            }, 500);
+
+            // Await the FINAL response stream (download) to complete
+            const response = await responsePromise;
+
+            if (!response.ok) {
+                if (interval) clearInterval(interval);
+                // Highlight failure in the UI and remove spinner
+                document.getElementById("progressBar").style.background = 'red';
+                statusElement.innerText = "❌ Conversion failed! Check backend logs.";
+                alert("Conversion failed! Check backend logs.");
+                return;
+            }
+
+            // Download zip automatically
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "exports.zip";
+            a.click();
+            window.URL.revokeObjectURL(url);
+
+            // Final UI Update: 
+            // 1. Set bar to 100%
+            document.getElementById("progressBar").style.width = "100%";
+            document.getElementById("progressText").innerText = "100%";
+
+            // 2. Stop spinner and show completion status
+            statusElement.innerText = "✅ Conversion complete!";
+        }
+    </script>
+</body>
+
+</html>
